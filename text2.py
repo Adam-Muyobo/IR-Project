@@ -101,3 +101,4 @@ class UnixConsultant(IRSystem):
 if __name__ == "__main__":
     ir_system = UnixConsultant()
     ir_system.present_results("gzip cat", n=5)
+
