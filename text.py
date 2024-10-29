@@ -191,38 +191,6 @@ class IRSystem:
         # There are many options; here we take a very simple approach
         return np.log(1 + self.index[word][docid]) / np.log(1 + self.documents[docid].nwords)
 
-    def get_relevant_documents(self, query, expert_relevant_indexes):
-        """Return the list of relevant document indexes based on expert judgment."""
-        relevant_docs = []
-        for index in expert_relevant_indexes:
-            if index < len(self.documents):
-                relevant_docs.append(index)
-        return relevant_docs
-
-    def retrieve_documents(self, query):
-        """Retrieve documents that contain terms from the query."""
-        query_terms = query.split()
-        retrieved_docs = []
-
-        for i, doc in enumerate(self.documents):
-            # Check if any query term is in the document's words
-            if any(term in doc.word_count for term in query_terms):
-                retrieved_docs.append(i)
-
-        return retrieved_docs
-
-    def evaluate(self, relevant_docs, retrieved_docs):
-        """Calculate Precision, Recall, FP, FN, and F-measure."""
-        TP = len(set(relevant_docs) & set(retrieved_docs))  # True Positives
-        FP = len(set(retrieved_docs) - set(relevant_docs))  # False Positives
-        FN = len(set(relevant_docs) - set(retrieved_docs))  # False Negatives
-
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0
-        f_measure = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-
-        return precision, recall, FP, FN, f_measure
-
     def total_score(self, words, docid):
         """Compute the sum of the scores of these words on the document with this docid."""
         return sum(self.score(word, docid) for word in words)
