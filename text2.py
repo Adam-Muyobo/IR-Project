@@ -1,3 +1,7 @@
+"""
+202104060 Muyobo, AM Computer Science
+202102742 Mndolo, BK Computer Science
+"""
 import numpy as np
 from collections import Counter
 

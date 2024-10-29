@@ -1,4 +1,8 @@
 """
+202104060 Muyobo, AM Computer Science
+202102742 Mndolo, BK Computer Science
+"""
+"""
 Statistical Language Processing tools (Chapter 22)
 
 We define Unigram and Ngram text models, use them to generate random text,
