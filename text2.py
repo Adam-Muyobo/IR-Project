@@ -2,89 +2,102 @@
 202104060 Muyobo, AM Computer Science
 202102742 Mndolo, BK Computer Science
 """
+import heapq
+import os
+import re
+from collections import defaultdict
+
 import numpy as np
-from collections import Counter
+
+from probabilistic_learning import CountingProbDist
+from utils import hashabledict
+
+
+class UnigramWordModel(CountingProbDist):
+    """This is a discrete probability distribution over words."""
+    def __init__(self, observations, default=0):
+        super(UnigramWordModel, self).__init__(observations, default)
+
+    def samples(self, n):
+        """Return a string of n words, random according to the model."""
+        return ' '.join(self.sample() for i in range(n))
+
 
 class Document:
-    def __init__(self, text):
-        self.text = text
-        self.words = text.split()
-        self.nwords = len(self.words)
-        self.word_count = Counter(self.words)
+    """Metadata for a document: title and url."""
+    def __init__(self, title, url, nwords):
+        self.title = title
+        self.url = url
+        self.nwords = nwords
+
+
+def words(text, reg=re.compile('[a-z0-9]+')):
+    """Return a list of the words in text, ignoring punctuation."""
+    return reg.findall(text.lower())
+
 
 class IRSystem:
-    def __init__(self, documents):
-        self.documents = documents
+    """A very simple Information Retrieval System."""
+    def __init__(self, stopwords='the a of'):
+        self.index = defaultdict(lambda: defaultdict(int))
+        self.stopwords = set(words(stopwords))
+        self.documents = []
 
-    def score(self, word):
-        """Calculate the score of a given word in all documents."""
-        scores = []
-        for doc in self.documents:
-            freq = doc.word_count[word]
-            score = np.log(1 + freq) / np.log(1 + doc.nwords)
-            scores.append(score)
-        return scores
+    def index_collection(self, filenames):
+        """Index a whole collection of files."""
+        prefix = os.path.dirname(__file__)
+        for filename in filenames:
+            self.index_document(open(filename).read(), os.path.relpath(filename, prefix))
 
-    def get_relevant_documents(self, query, expert_relevant_indexes):
-        """Return the list of relevant document indexes based on expert judgment."""
-        relevant_docs = []
-        for index in expert_relevant_indexes:
-            if index < len(self.documents):
-                relevant_docs.append(index)
-        return relevant_docs
+    def index_document(self, text, url):
+        """Index the text of a document."""
+        title = text[:text.index('\n')].strip()
+        docwords = words(text)
+        docid = len(self.documents)
+        self.documents.append(Document(title, url, len(docwords)))
+        for word in docwords:
+            if word not in self.stopwords:
+                self.index[word][docid] += 1
 
-    def retrieve_documents(self, query):
-        """Retrieve documents that contain terms from the query."""
-        query_terms = query.split()
-        retrieved_docs = []
+    def query(self, query_text, n=10):
+        """Return a list of n (score, docid) pairs for the best matches."""
+        qwords = [w for w in words(query_text) if w not in self.stopwords]
+        docids = set(docid for word in qwords if word in self.index for docid in self.index[word])
+        return heapq.nlargest(n, ((self.total_score(qwords, docid), docid) for docid in docids))
 
-        for i, doc in enumerate(self.documents):
-            # Check if any query term is in the document's words
-            if any(term in doc.word_count for term in query_terms):
-                retrieved_docs.append(i)
+    def score(self, word, docid):
+        """Compute a score for this word on the document with this docid based on frequency."""
+        return self.index[word][docid]
 
-        return retrieved_docs
+    def total_score(self, words, docid):
+        """Compute the sum of the scores of these words on the document with this docid."""
+        return sum(self.score(word, docid) for word in words)
 
-    def evaluate(self, relevant_docs, retrieved_docs):
-        """Calculate Precision, Recall, FP, FN, and F-measure."""
-        TP = len(set(relevant_docs) & set(retrieved_docs))  # True Positives
-        FP = len(set(retrieved_docs) - set(relevant_docs))  # False Positives
-        FN = len(set(relevant_docs) - set(retrieved_docs))  # False Negatives
+    def present(self, results):
+        """Present the results as a list."""
+        for (score, docid) in results:
+            doc = self.documents[docid]
+            print("{:5.2f}|{:25} | {}".format(100 * score, doc.url, doc.title[:45].expandtabs()))
 
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0
-        f_measure = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    def present_results(self, query_text, n=10):
+        """Get results for the query and present them."""
+        self.present(self.query(query_text, n))
 
-        return precision, recall, FP, FN, f_measure
+
+class UnixConsultant(IRSystem):
+    """A trivial IR system over a small collection of Unix man pages."""
+    def __init__(self):
+        IRSystem.__init__(self, stopwords="how do i the a of")
+
+        import os
+        aima_root = os.path.dirname(__file__)
+        mandir = os.path.join(aima_root, 'aima-data/MAN/')
+        man_files = [mandir + f for f in os.listdir(mandir) if f.endswith('.txt')]
+
+        self.index_collection(man_files)
+
 
 # Example usage
 if __name__ == "__main__":
-    # Sample documents
-    documents = [
-        Document("text of document one discussing various topics"),
-        Document("another text of document two with different content"),
-        Document("document three contains relevant information about text"),
-    ]
-
-    # Create an IR system with the documents
-    ir_system = IRSystem(documents)
-
-    # Score the word "text"
-    word_to_score = "text"
-    scores = ir_system.score(word_to_score)
-    print("Scores for word '{}':".format(word_to_score), scores)
-
-    # Define expert judgments for relevant documents
-    expert_relevant_indexes = [0, 2]  # Let's say documents 0 and 2 are relevant based on expert judgment
-
-    # Get relevant documents based on the expert judgments
-    relevant_docs = ir_system.get_relevant_documents("text", expert_relevant_indexes)
-
-    # Retrieve documents based on a query
-    query = "text"
-    retrieved_docs = ir_system.retrieve_documents(query)
-    print("Retrieved documents:", retrieved_docs)
-
-    # Evaluate the system
-    precision, recall, fp, fn, f_measure = ir_system.evaluate(relevant_docs, retrieved_docs)
-    print(f"Precision: {precision:.2f}, Recall: {recall:.2f}, FP: {fp}, FN: {fn}, F-measure: {f_measure:.2f}")
+    ir_system = UnixConsultant()
+    ir_system.present_results("gzip cat", n=5)
