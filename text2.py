@@ -1,90 +1,72 @@
-"""
-202104060 Muyobo, AM Computer Science
-202102742 Mndolo, BK Computer Science
-"""
+import heapq 
+import os
+import re
+from collections import defaultdict
 import numpy as np
-from collections import Counter
+from probabilistic_learning import CountingProbDist
+from utils import hashabledict
+from text import words, Document, IRSystem
 
-class Document:
-    def __init__(self, text):
-        self.text = text
-        self.words = text.split()
-        self.nwords = len(self.words)
-        self.word_count = Counter(self.words)
+class ExtendedIRSystem(IRSystem):
+    """An extended Information Retrieval System that calculates BM25 scores."""
 
-class IRSystem:
-    def __init__(self, documents):
-        self.documents = documents
+    def __init__(self, stopwords='the a of'):
+        super().__init__(stopwords)
+        self.doc_lengths = []  # Store the length of each document for BM25
+        self.avg_doc_length = 0  # Average document length
 
-    def score(self, word):
-        """Calculate the score of a given word in all documents."""
-        scores = []
-        for doc in self.documents:
-            freq = doc.word_count[word]
-            score = np.log(1 + freq) / np.log(1 + doc.nwords)
-            scores.append(score)
-        return scores
+    def index_document(self, text, url):
+        """Index the text of a document and compute document length."""
+        title = text[:text.index('\n')].strip()
+        docwords = words(text)
+        docid = len(self.documents)
+        self.documents.append(Document(title, url, len(docwords)))
+        
+        self.doc_lengths.append(len(docwords))  # Store document length
+        self.avg_doc_length = np.mean(self.doc_lengths)  # Update average length
+        
+        for word in docwords:
+            if word not in self.stopwords:
+                self.index[word][docid] += 1
 
-    def get_relevant_documents(self, query, expert_relevant_indexes):
-        """Return the list of relevant document indexes based on expert judgment."""
-        relevant_docs = []
-        for index in expert_relevant_indexes:
-            if index < len(self.documents):
-                relevant_docs.append(index)
-        return relevant_docs
+    def score(self, word, docid):
+        """Compute a BM25 score for this word on the document with this docid."""
+        # BM25 parameters
+        k1 = 1.5
+        b = 0.75
 
-    def retrieve_documents(self, query):
-        """Retrieve documents that contain terms from the query."""
-        query_terms = query.split()
-        retrieved_docs = []
+        # Get term frequency (TF) and document frequency (DF)
+        tf = self.index[word][docid]  # Term frequency in the document
+        df = len(self.index[word])  # Document frequency for the term
+        doc_length = self.doc_lengths[docid]  # Length of the document
 
-        for i, doc in enumerate(self.documents):
-            # Check if any query term is in the document's words
-            if any(term in doc.word_count for term in query_terms):
-                retrieved_docs.append(i)
+        # BM25 formula
+        numerator = tf * (k1 + 1)
+        denominator = tf + k1 * (1 - b + b * (doc_length / self.avg_doc_length))
+        score = (numerator / denominator) * np.log((len(self.documents) - df + 0.5) / (df + 0.5))
 
-        return retrieved_docs
+        return score
 
-    def evaluate(self, relevant_docs, retrieved_docs):
-        """Calculate Precision, Recall, FP, FN, and F-measure."""
-        TP = len(set(relevant_docs) & set(retrieved_docs))  # True Positives
-        FP = len(set(retrieved_docs) - set(relevant_docs))  # False Positives
-        FN = len(set(relevant_docs) - set(retrieved_docs))  # False Negatives
-
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0
-        f_measure = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-
-        return precision, recall, FP, FN, f_measure
+    def present_individual_scores(self, query_text, n=10):
+        """Present the individual BM25 scores for the words in the query."""
+        qwords = [w for w in words(query_text) if w not in self.stopwords]
+        for word in qwords:
+            if word in self.index:
+                scores = [(docid, self.score(word, docid)) for docid in self.index[word]]
+                print(f"Scores for word '{word}':")
+                for docid, score in scores:
+                    print(f"Document ID: {docid}, Score: {score:.4f}")
+            else:
+                print(f"Word '{word}' not found in index.")
 
 # Example usage
 if __name__ == "__main__":
-    # Sample documents
-    documents = [
-        Document("text of document one discussing various topics"),
-        Document("another text of document two with different content"),
-        Document("document three contains relevant information about text"),
-    ]
+    # Create an instance of ExtendedIRSystem
+    ir_system = ExtendedIRSystem(stopwords='the a of')
 
-    # Create an IR system with the documents
-    ir_system = IRSystem(documents)
+    # Index some documents (example)
+    ir_system.index_document("Document 1 content goes here.", "doc1")
+    ir_system.index_document("Document 2 content is different.", "doc2")
 
-    # Score the word "text"
-    word_to_score = "text"
-    scores = ir_system.score(word_to_score)
-    print("Scores for word '{}':".format(word_to_score), scores)
-
-    # Define expert judgments for relevant documents
-    expert_relevant_indexes = [0, 2]  # Let's say documents 0 and 2 are relevant based on expert judgment
-
-    # Get relevant documents based on the expert judgments
-    relevant_docs = ir_system.get_relevant_documents("text", expert_relevant_indexes)
-
-    # Retrieve documents based on a query
-    query = "text"
-    retrieved_docs = ir_system.retrieve_documents(query)
-    print("Retrieved documents:", retrieved_docs)
-
-    # Evaluate the system
-    precision, recall, fp, fn, f_measure = ir_system.evaluate(relevant_docs, retrieved_docs)
-    print(f"Precision: {precision:.2f}, Recall: {recall:.2f}, FP: {fp}, FN: {fn}, F-measure: {f_measure:.2f}")
+    # Present individual BM25 scores for a query
+    ir_system.present_individual_scores("content different")
